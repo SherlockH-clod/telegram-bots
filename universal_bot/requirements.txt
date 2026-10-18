@@ -1,5 +1,5 @@
 aiogram>=3.13
-yt-dlp
+yt-dlp[default]
 python-dotenv
 faster-whisper
 anthropic

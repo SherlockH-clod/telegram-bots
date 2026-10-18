@@ -181,12 +181,37 @@ async def send_long(bot: Bot, chat_id: int, text: str, prefix: str = ""):
 
 
 # ------------------------------------------------------------ og'ir ishlar (sync)
+
+def _setup_cookies():
+    """YouTube 'bot emasligingizni tasdiqlang' xatosi uchun ixtiyoriy cookies (YT_COOKIES yoki YT_COOKIES_B64)."""
+    import base64
+    raw = os.getenv("YT_COOKIES", "")
+    b64 = os.getenv("YT_COOKIES_B64", "")
+    if b64:
+        raw = base64.b64decode(b64).decode("utf-8", "ignore")
+    if raw.strip():
+        p = Path(tempfile.gettempdir()) / "cookies.txt"
+        p.write_text(raw, encoding="utf-8")
+        return str(p)
+    return None
+
+
+COOKIE_FILE = _setup_cookies()
+
+
+def ydl_extra() -> dict:
+    extra = {"js_runtimes": {"node": {}, "deno": {}}}
+    if COOKIE_FILE:
+        extra["cookiefile"] = COOKIE_FILE
+    return extra
+
 def ytdlp_download(url: str, out_dir: str, audio_only: bool, max_minutes):
     fmt = "bestaudio/best" if audio_only else (
         f"b[filesize<{MAX_MB}M]/b[filesize_approx<{MAX_MB}M]/b[height<=480]/b[height<=360]/b")
     opts = {"outtmpl": f"{out_dir}/%(id)s.%(ext)s", "format": fmt,
             "merge_output_format": "mp4", "noplaylist": True, "quiet": True,
             "no_warnings": True, "socket_timeout": 30, "retries": 3}
+    opts.update(ydl_extra())
     with YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
         if max_minutes and (info.get("duration") or 0) > max_minutes * 60:
@@ -296,11 +321,17 @@ async def launch(bot: Bot, chat_id: int, uid: int, action: str, job: dict, statu
         else:
             logging.exception("telegram error")
             await status.edit_text("❌ Telegram xatosi. Qaytadan urinib ko'ring.")
-    except Exception:
+    except Exception as e:
         refund_quota(uid)
         logging.exception("job failed")
-        await status.edit_text("❌ Bajarib bo'lmadi. Havola noto'g'ri, video yopiq (private) "
-                               "yoki sayt qo'llab-quvvatlanmaydi.")
+        err = str(e)
+        if "Sign in to confirm" in err or "not a bot" in err:
+            text = ("❌ YouTube hozir bu serverdan yuklashga ruxsat bermayapti. "
+                    "Birozdan keyin qayta urinib ko'ring yoki boshqa havola yuboring.")
+        else:
+            text = ("❌ Bajarib bo'lmadi. Havola noto'g'ri, video yopiq (private) "
+                    "yoki sayt qo'llab-quvvatlanmaydi.")
+        await status.edit_text(text)
 
 
 # ------------------------------------------------------------------ buyruqlar
